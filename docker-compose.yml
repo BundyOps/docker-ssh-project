@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  stage:
+    build: ./stage
+    container_name: stage-server
+    ports:
+      - "80:80"
+      - "5000:5000"
+      - "2222:22"
+    networks:
+      - ssh-network
+    restart: unless-stopped
+
+  jump:
+    build: ./jump
+    container_name: jump-server
+    ports:
+      - "2223:22"
+    networks:
+      - ssh-network
+    restart: unless-stopped
+    depends_on:
+      - stage
+
+  dev1:
+    build: ./dev1
+    container_name: developer1
+    networks:
+      - ssh-network
+    restart: unless-stopped
+    depends_on:
+      - jump
+    volumes:
+      - /tmp/ssh-agent.sock:/tmp/ssh-agent.sock
+    environment:
+      - SSH_AUTH_SOCK=/tmp/ssh-agent.sock
+
+  dev2:
+    build: ./dev2
+    container_name: developer2
+    networks:
+      - ssh-network
+    restart: unless-stopped
+    depends_on:
+      - jump
+    volumes:
+      - ./dev2/ssh_key:/root/.ssh:ro
+
+networks:
+  ssh-network:
+    driver: bridge

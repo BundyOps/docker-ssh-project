@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+
+# Docker
+*.log
+*.pid
+*.pid.lock
+
+# SSH keys (important!)
+*.pem
+*.key
+dev2/ssh_key/id_rsa
+jump/ssh_keys/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker volumes
+volumes/
