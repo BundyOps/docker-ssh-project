@@ -1,16 +1,20 @@
-version: '3.8'
-
+#version: '3.8'
 services:
   stage:
     build: ./stage
     container_name: stage-server
     ports:
       - "80:80"
-      - "5000:5000"
+      - "8000:8000"
       - "2222:22"
     networks:
       - ssh-network
     restart: unless-stopped
+    volumes:
+      - stage-logs:/app/logs
+      - stage-nginx-logs:/var/log/nginx
+    env_file:
+      - ./stage/flask_app/.env
 
   jump:
     build: ./jump
@@ -50,3 +54,7 @@ services:
 networks:
   ssh-network:
     driver: bridge
+    
+volumes:
+  stage-logs:
+  stage-nginx-logs:
