@@ -1,0 +1,144 @@
+service ssh restart
+==========================is equal to:
+pkill sshd
+/usr/sbin/sshd
+
+
+in /etc/ssh/sshd_config:
+PermitRootLogin  yes
+PasswordAuthentication yes
+
+
+
+
+
+my keys and others pubkey of ssh is in : ~/.ssh
+ssh configs is in : /etc/ssh
+commands : ssh-agent ssh-add ssh-keygen ssh ...
+for passwordless ssh should copy your pubkey to destination : ssh-copy-id -i pathToPubKey dest@dest
+for agentic also need to copy you pubkey to destination
+
+
+
+
+~/.ssh/config is for your user — SSH client behavior
+/etc/ssh/ssh_config is system-wide — same syntax, lower priority
+Don't confuse with /etc/ssh/sshd_config — that's the server config
+Simple example of ~/.ssh/config:
+Host myserver
+    HostName 192.168.1.50
+    User dev
+    Port 2222
+    IdentityFile ~/.ssh/id_ed25519
+Now instead of: 	ssh -p 2222 -i ~/.ssh/id_ed25519 dev@192.168.1.50
+You just run:		ssh myserver
+
+
+.ssh is where SSH looks for:
+~/.ssh/id_ed25519 / id_rsa — private keys
+~/.ssh/id_ed25519.pub — public keys
+~/.ssh/authorized_keys — keys allowed to log in
+~/.ssh/known_hosts — fingerprints of servers you've connected to
+~/.ssh/config — client config
+
+
+
+
+mkdir -p /run/sshd
+/usr/sbin/sshd
+================
+Line 1: mkdir -p /run/sshd
+Why does sshd need this?
+sshd uses /run/sshd as its runtime directory — a place to store things like:
+The privilege separation directory (UsePrivilegeSeparation sandbox)
+Unix socket / lock files needed while running
+/run is a tmpfs — it lives in RAM and is wiped on every boot (and in containers, it starts empty). So even though the directory may have existed in the image, it's gone at container start and must be recreated before sshd launches.
+
+Line 2: /usr/sbin/sshd
+Runs the SSH daemon (server).
+What it does
+Reads /etc/ssh/sshd_config
+Binds to port 22 (or whatever Port says)
+Listens for incoming SSH connections
+
+
+sshd and the ssh client refuse to use files that are group/world-writable or not owned by the right user. They do this because a world-writable key file would let any other user on the box swap your key for theirs and impersonate you.
+The rules, roughly:
+~/.ssh (the directory): must be 700 — only the owner can enter/modify it. If someone else can write here, they can replace authorized_keys or id_ed25519.
+Private keys (id_ed25519): must be 600 — owner read/write only. If anyone else can read it, it's compromised.
+authorized_keys: must be 600 (or 644 in some setups) — writable only by the owner, since whoever can write it can add their own key.
+config: must not be group/world-writable — 600 is safest.
+Ownership: all of the above must be owned by the user logging in — dev, not root.
+
+
+
+
+
+
+
+
+
+
+useradd -m -s /bin/bash dev
+passwd dev                      # set password (optional in containers)
+-m → create home directory (/home/dev)
+-s /bin/bash → set login shell (default is often /bin/sh)
+Without -m, no home dir is created — a common gotcha.
+
+
+su              # become root (asks for ROOT's password)
+su -            # become root with a login shell
+su dev          # become user "dev" (asks for dev's password)
+su - dev        # same, but as a full login shell
+
+
+cat /etc/passwd
+username:x:UID:GID:comment:home:shell
+dev:x:1000:1000:Dev User:/home/dev:/bin/bash
+
+whoami          # current username
+id              # current user + UID + all groups
+id dev          # info about user "dev"
+
+cat /etc/group
+groupname:x:GID:member1,member2
+sudo:x:27:dev
+docker:x:999:dev
+
+sudo -l                  # what can *I* run with sudo?
+sudo -l -U dev           # what can user "dev" run?
+
+cat /etc/sudoers
+ls /etc/sudoers.d/
+cat /etc/sudoers.d/*
+
+
+Add a user to a group
+bash
+sudo usermod -aG sudo dev       # add dev to sudo group
+sudo usermod -aG docker dev     # add dev to docker group
+-a = append (never omit it — without -a, the user is removed from all other groups!)
+-G = supplementary groups list
+
+
+Edit sudoers safely:
+sudo visudo                      # main file
+sudo visudo -f /etc/sudoers.d/dev   # drop-in file (preferred)
+
+Examples:
+dev   ALL=(ALL) NOPASSWD:ALL               # full passwordless sudo
+%devs ALL=(ALL) /usr/bin/apt-get           # group "devs" may only run apt-get
+dev   ALL=(ALL) /bin/systemctl restart nginx
+
+
+chown dev:developers file      # change owner + group
+chmod 750 file                 # rwxr-x---
+chmod g+w file                 # add write for group
+setfacl -m u:dev:rw file       # fine-grained ACL for user dev
+getfacl file                   # view ACLs
+
+
+
+
+cat /etc/shadow
+

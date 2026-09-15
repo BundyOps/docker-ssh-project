@@ -1,60 +1,29 @@
-#version: '3.8'
 services:
-  stage:
-    build: ./stage
-    container_name: stage-server
-    ports:
-      - "80:80"
-      - "8000:8000"
-      - "2222:22"
+  developer:
+    image: myubuntu:1.0
+    container_name: developer
+    command: tail -f /dev/null
+    #tty: true
+    #stdin_open: true
     networks:
-      - ssh-network
-    restart: unless-stopped
-    volumes:
-      - stage-logs:/app/logs
-      - stage-nginx-logs:/var/log/nginx
-    env_file:
-      - ./stage/flask_app/.env
+      - worldwideNET
+
 
   jump:
-    build: ./jump
-    container_name: jump-server
-    ports:
-      - "2223:22"
+    image: myubuntu:1.0
+    container_name: jump
+    command: tail -f /dev/null
     networks:
-      - ssh-network
-    restart: unless-stopped
-    depends_on:
-      - stage
+      - worldwideNET
+      - companyLAN
 
-  dev1:
-    build: ./dev1
-    container_name: developer1
+  internal:
+    image: myubuntu:1.0
+    container_name: internal
+    command: tail -f /dev/null
     networks:
-      - ssh-network
-    restart: unless-stopped
-    depends_on:
-      - jump
-    volumes:
-      - /tmp/ssh-agent.sock:/tmp/ssh-agent.sock
-    environment:
-      - SSH_AUTH_SOCK=/tmp/ssh-agent.sock
-
-  dev2:
-    build: ./dev2
-    container_name: developer2
-    networks:
-      - ssh-network
-    restart: unless-stopped
-    depends_on:
-      - jump
-    volumes:
-      - ./dev2/ssh_key:/root/.ssh:ro
+      - companyLAN
 
 networks:
-  ssh-network:
-    driver: bridge
-    
-volumes:
-  stage-logs:
-  stage-nginx-logs:
+  worldwideNET:
+  companyLAN:
