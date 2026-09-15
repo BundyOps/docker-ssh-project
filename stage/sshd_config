@@ -1,5 +1,0 @@
-Port 22
-PermitRootLogin no
-PasswordAuthentication yes
-AllowUsers stageuser
-Subsystem sftp /usr/lib/openssh/sftp-server

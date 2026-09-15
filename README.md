@@ -1,15 +1,16 @@
-# Docker SSH Project - Week 2
+https://chat.deepseek.com/share/qtwgz8nhf2wr24ui9y
 
-## Overview
-This project demonstrates Docker containerization with SSH, NGINX, and Flask.
 
-## Architecture
-- **Developer 1**: SSH agent forwarding
-- **Developer 2**: Passwordless SSH + port forwarding
-- **Jump Server**: Bastion host / SSH gateway
-- **Stage Server**: SSH server + NGINX + Flask app
 
-## Quick Start
-```bash
-docker-compose build
-docker-compose up -d
+
+
+docker exec -it developer bash
+eval "$(ssh-agent -s)"
+ssh-add ~/.ssh/id_ed25519
+ssh-add -l
+ssh jump
+ssh-add -l     # your key is here (forwarded)
+ls ~/.ssh/     # only authorized_keys — no private key
+ssh dev@internal
+
+

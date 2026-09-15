@@ -1,40 +1,22 @@
-FROM ubuntu:22.04
+FROM myubuntu:1.0
 
-# Install system packages (NOT Python packages!)
 RUN apt-get update && \
-    apt-get install -y \
-        openssh-server \
-        python3 \
-        python3-pip \
-        nginx \
-        curl \
-        && rm -rf /var/lib/apt/lists/*
+    apt-get install -y --no-install-recommends openssh-server && \
+    rm -rf /var/lib/apt/lists/*
 
-# Create SSH user
-RUN useradd -m -s /bin/bash stageuser && \
-    echo "stageuser:stagepass" | chpasswd
+RUN useradd -m -s /bin/bash dev && \
+    mkdir -p /home/dev/.ssh /run/sshd && \
+    chown -R dev:dev /home/dev/.ssh && \
+    chmod 700 /home/dev/.ssh
 
-# Setup SSH
-RUN mkdir -p /var/run/sshd
-COPY sshd_config /etc/ssh/sshd_config
+COPY --chown=dev:dev keys/id_ed25519.pub /home/dev/.ssh/authorized_keys
 
-# Setup NGINX
-RUN rm -f /etc/nginx/sites-enabled/default
-COPY nginx/default.conf /etc/nginx/sites-enabled/default
+RUN chmod 600 /home/dev/.ssh/authorized_keys
 
-# Setup Flask app
-COPY flask_app/ /app/
-WORKDIR /app
+RUN printf '\n\
+AllowAgentForwarding yes\n\
+PubkeyAuthentication yes\n\
+PermitRootLogin no\n' >> /etc/ssh/sshd_config
 
-# Create logs directory
-RUN mkdir -p /app/logs /var/log/nginx
-
-# Install Python dependencies from requirements.txt
-# This includes gunicorn, flask, requests, etc.
-RUN pip3 install --no-cache-dir -r requirements.txt
-
-# Expose ports
-EXPOSE 22 80 8000
-
-
-CMD ["/bin/bash", "-c", "service ssh start && service nginx start && gunicorn --config /app/gunicorn.conf.py wsgi:app"]
+EXPOSE 22
+CMD ["/usr/sbin/sshd", "-D", "-e"]

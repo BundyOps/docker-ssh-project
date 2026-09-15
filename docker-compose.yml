@@ -1,26 +1,30 @@
 services:
   developer:
-    image: myubuntu:1.0
+    build:
+      context: .
+      dockerfile: dev1/Dockerfile
     container_name: developer
-    command: tail -f /dev/null
-    #tty: true
-    #stdin_open: true
+    hostname: developer
     networks:
       - worldwideNET
 
 
   jump:
-    image: myubuntu:1.0
+    build:
+      context: .
+      dockerfile: jump/Dockerfile
     container_name: jump
-    command: tail -f /dev/null
+    hostname: jump
     networks:
       - worldwideNET
       - companyLAN
 
   internal:
-    image: myubuntu:1.0
+    build:
+      context: .
+      dockerfile: stage/Dockerfile
     container_name: internal
-    command: tail -f /dev/null
+    hostname: internal
     networks:
       - companyLAN
 

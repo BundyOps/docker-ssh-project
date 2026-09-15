@@ -1,25 +1,20 @@
-FROM python:3.15.0rc2-slim
+FROM myubuntu:1.0
 
-# Install SSH client
 RUN apt-get update && \
-    apt-get install -y openssh-client && \
+    apt-get install -y --no-install-recommends openssh-client && \
     rm -rf /var/lib/apt/lists/*
 
-# Create app directory
-WORKDIR /app
+RUN useradd -m -s /bin/bash dev
 
-# Copy requirements and install
-COPY requirements.txt .
-RUN pip install -r requirements.txt
+COPY --chown=dev:dev dev1/ssh_config    /home/dev/.ssh/config
+COPY --chown=dev:dev keys/id_ed25519         /home/dev/.ssh/id_ed25519
+COPY --chown=dev:dev keys/id_ed25519.pub     /home/dev/.ssh/id_ed25519.pub
 
-# Copy script
-COPY dev1.py .
+RUN chmod 700 /home/dev/.ssh && \
+    chmod 600 /home/dev/.ssh/config && \
+    chmod 600 /home/dev/.ssh/id_ed25519 && \
+    chmod 644 /home/dev/.ssh/id_ed25519.pub
 
-# Make script executable
-RUN chmod +x /app/dev1.py
-
-# Create SSH directory
-RUN mkdir -p /root/.ssh
-
-# Run the script
-CMD ["python", "/app/dev1.py"]
+USER dev
+WORKDIR /home/dev
+CMD ["sleep", "infinity"]

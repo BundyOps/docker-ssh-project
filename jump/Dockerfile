@@ -1,30 +1,23 @@
-FROM ubuntu:22.04
+FROM myubuntu:1.0
 
-# Install SSH server
 RUN apt-get update && \
-    apt-get install -y openssh-server && \
+    apt-get install -y --no-install-recommends \
+        openssh-server openssh-client && \
     rm -rf /var/lib/apt/lists/*
 
-# Create user
-RUN useradd -m -s /bin/bash jumpuser && \
-    echo "jumpuser:jumppass" | chpasswd
+RUN useradd -m -s /bin/bash dev && \
+    mkdir -p /home/dev/.ssh /run/sshd && \
+    chown -R dev:dev /home/dev/.ssh && \
+    chmod 700 /home/dev/.ssh
 
-# Create required directories
-#docker compose build error if not create this directory
-RUN mkdir -p /var/run/sshd && \
-    mkdir -p /home/jumpuser/.ssh && \
-    chmod 700 /home/jumpuser/.ssh && \
-    chown jumpuser:jumpuser /home/jumpuser/.ssh
+COPY --chown=dev:dev keys/id_ed25519.pub /home/dev/.ssh/authorized_keys
 
-# Copy SSH config
-COPY sshd_config /etc/ssh/sshd_config
+RUN chmod 600 /home/dev/.ssh/authorized_keys
 
-# Generate host keys
-RUN ssh-keygen -A
-
-# Test SSH config
-RUN sshd -t
+RUN printf '\n\
+AllowAgentForwarding yes\n\
+PubkeyAuthentication yes\n\
+PermitRootLogin no\n' >> /etc/ssh/sshd_config
 
 EXPOSE 22
-
-CMD ["/usr/sbin/sshd", "-D"]
+CMD ["/usr/sbin/sshd", "-D", "-e"]
