@@ -1,4 +1,4 @@
-FROM python:3.9-slim
+FROM python:3.15.0rc2-slim
 
 # Install SSH client
 RUN apt-get update && \
@@ -14,6 +14,9 @@ RUN pip install -r requirements.txt
 
 # Copy script
 COPY dev1.py .
+
+# Make script executable
+RUN chmod +x /app/dev1.py
 
 # Create SSH directory
 RUN mkdir -p /root/.ssh
