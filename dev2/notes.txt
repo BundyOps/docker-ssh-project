@@ -1,0 +1,33 @@
+Host tunnel-bastion
+    HostName bastion
+    User root
+    Port 22
+    LocalForward 8080 target:80
+    ExitOnForwardFailure yes
+$ ssh -N -L 8080:target:80 root@bastion
+bind [127.0.0.1]:8080: Address already in use
+channel_setup_fwd_listener_tcpip: cannot listen to port: 8080
+Could not request local forwarding.
+# <-- WITHOUT ExitOnForwardFailure, ssh just hangs here, silently useless
+    
+    
+    
+    ServerAliveInterval 30
+Every 30 seconds, the SSH client sends a small encrypted "are you there?" packet to the server. This is a keep-alive probe.
+Cause	Effect without keep-alive
+NAT/firewall idle timeout	Drops the TCP session after N minutes of silence
+Cloud load balancers	Kill "idle" connections (often 60–300s)
+Docker networks / VPNs	Reap stale flows
+Wi-Fi sleep / laptop suspend	Connection hangs, never recovers
+Because a -N tunnel sends no data when unused, firewalls see it as "idle" and close it. The periodic probe keeps the path marked "active."
+    
+    
+    ServerAliveCountMax 3
+This is the failure threshold for ServerAliveInterval. SSH tolerates up to 3 consecutive missed probes before it gives up.
+    
+    
+do : 
+on internalServer: 	apt install nginx
+			service nginx start
+on developer2:		ssh -N jump &
+

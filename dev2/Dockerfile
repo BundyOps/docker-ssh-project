@@ -1,25 +1,25 @@
-FROM python:3.9-slim
+FROM myubuntu:1.0
 
-# Install SSH client
 RUN apt-get update && \
-    apt-get install -y openssh-client && \
+    apt-get install -y --no-install-recommends openssh-client python3-paramiko && \
     rm -rf /var/lib/apt/lists/*
 
-# Create app directory
-WORKDIR /app
+RUN useradd -m -s /bin/bash dev2
 
-# Copy requirements and install
-COPY requirements.txt .
-RUN pip install -r requirements.txt
+COPY --chown=dev2:dev2 dev2/ssh_config     /home/dev2/.ssh/config
+COPY --chown=dev2:dev2 keys/id_dev2          /home/dev2/.ssh/id_dev2
+COPY --chown=dev2:dev2 keys/id_dev2.pub      /home/dev2/.ssh/id_dev2.pub
+COPY --chown=dev2:dev2 dev2/keepalive.py   /home/dev2/keepalive.py
+COPY --chown=dev2:dev2 dev2/entrypoint.sh  /home/dev2/entrypoint.sh
 
-# Copy script
-COPY dev2.py .
+RUN chmod 700 /home/dev2/.ssh && \
+    chmod 600 /home/dev2/.ssh/config && \
+    chmod 600 /home/dev2/.ssh/id_dev2 && \
+    chmod 644 /home/dev2/.ssh/id_dev2.pub && \
+    chmod 755 /home/dev2/keepalive.py && \
+    chmod 755 /home/dev2/entrypoint.sh
 
-# Copy SSH key (passwordless authentication)
-RUN mkdir -p /root/.ssh
-COPY ssh_key/ /root/.ssh/
-RUN chmod 600 /root/.ssh/id_rsa
-RUN chmod 700 /root/.ssh
-
-# Run the script
-CMD ["python", "/app/dev2.py"]
+USER dev2
+WORKDIR /home/dev2
+# No ENTRYPOINT, no CMD — compose decides what to run.
+# CMD ["sleep", "infinity"]

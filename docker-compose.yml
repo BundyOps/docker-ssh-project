@@ -5,10 +5,21 @@ services:
       dockerfile: dev1/Dockerfile
     container_name: developer
     hostname: developer
-    command: ["/home/dev/entrypoint.sh"]
+    command: ["sleep", "infinity"]
+    #["/home/dev/entrypoint.sh"]
     networks:
       - worldwideNET
-
+      
+  developer2:
+    build:
+      context: .
+      dockerfile: dev2/Dockerfile
+    container_name: developer2
+    hostname: developer2
+    command: ["sleep", "infinity"]
+    #["/home/dev2/entrypoint.sh"]
+    networks:
+      - worldwideNET
 
   jump:
     build:
