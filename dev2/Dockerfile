@@ -21,5 +21,8 @@ RUN chmod 700 /home/dev2/.ssh && \
 
 USER dev2
 WORKDIR /home/dev2
+RUN python3 -m venv .venv && \
+    . .venv/bin/activate && \
+    pip install paramiko tenacity
 # No ENTRYPOINT, no CMD — compose decides what to run.
 # CMD ["sleep", "infinity"]

@@ -38,3 +38,8 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
+
+# if venv and packages handeled in img do:
+source .venv/bin/activate
+python3 keepalive.py
+

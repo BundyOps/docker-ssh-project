@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """
-Step 2: Same passwordless SSH connection as step 1,
-but wrapped in a tenacity retry loop that keeps trying forever.
+Step 2.5: Passwordless SSH that stays connected.
+- Retries on initial connect failure.
+- Detects mid-session disconnection and reconnects.
+- Runs until Ctrl-C / SIGTERM.
 """
 
 import logging
 import signal
 import sys
+import time
 from pathlib import Path
 
 import paramiko
@@ -21,7 +24,6 @@ from tenacity import (
     before_sleep_log,
     retry,
     retry_if_exception_type,
-    stop_after_delay,
     wait_exponential,
 )
 
@@ -31,10 +33,8 @@ SSH_PORT = 22
 SSH_USER = "dev2"
 SSH_KEY  = Path.home() / ".ssh" / "id_dev2"
 
-# Retry policy
-RETRY_MAX_SECONDS = 0        # 0 = retry forever
-RETRY_WAIT_MIN    = 2        # first backoff
-RETRY_WAIT_MAX    = 30       # cap
+KEEPALIVE_INTERVAL = 15   # seconds between keep-alive probes
+HEALTHCHECK_PERIOD = 5    # seconds between is_active() checks
 # -----------------------------------
 
 logging.basicConfig(
@@ -42,18 +42,15 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%H:%M:%S",
 )
-log = logging.getLogger("connect")
+log = logging.getLogger("stayalive")
 
-# ---- exceptions we consider "transient" (worth retrying) ----
-# Note: AuthenticationException is deliberately EXCLUDED — a bad key
-# will never fix itself by retrying. We want that to fail loudly.
 TRANSIENT_ERRORS = (
-    NoValidConnectionsError,   # host down / wrong port
-    SocketError,               # low-level socket failure
-    SSHException,              # generic SSH-level failure (banner, kex, ...)
-    TimeoutError,              # connect() timeout
-    ConnectionError,           # broken pipe / reset / refused
-    OSError,                   # catch-all for network-level issues
+    NoValidConnectionsError,
+    SocketError,
+    SSHException,
+    TimeoutError,
+    ConnectionError,
+    OSError,
 )
 
 _shutdown = False
@@ -65,16 +62,21 @@ def _handle_signal(signum, _frame):
     _shutdown = True
 
 
-def _stop_policy():
-    """Return a tenacity stop strategy honoring --never or a max duration."""
-    if RETRY_MAX_SECONDS <= 0:
-        from tenacity import stop_never
-        return stop_never
-    return stop_after_delay(RETRY_MAX_SECONDS)
+# ---------------------------------------------------------------------------
+# The long-running operation that tenacity will retry
+# ---------------------------------------------------------------------------
+class Disconnected(Exception):
+    """Raised from the keep-alive loop when the SSH session dies."""
 
 
-def connect() -> paramiko.SSHClient:
-    """One connection attempt. Raises on failure."""
+def run_session() -> None:
+    """
+    Connect, then block until the session dies or we're told to stop.
+    Raises Disconnected (retryable) when the transport drops.
+    """
+    if _shutdown:
+        raise KeyboardInterrupt
+
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
@@ -87,24 +89,44 @@ def connect() -> paramiko.SSHClient:
         allow_agent=False,
         look_for_keys=False,
         timeout=10,
+        banner_timeout=10,
+        auth_timeout=10,
     )
     log.info("Connected.")
-    return client
+
+    transport = client.get_transport()
+    transport.set_keepalive(KEEPALIVE_INTERVAL)
+
+    try:
+        # ---- stay-alive loop ----
+        while not _shutdown:
+            if not transport.is_active():
+                log.warning("Transport is no longer active.")
+                raise Disconnected("SSH transport died")
+            time.sleep(HEALTHCHECK_PERIOD)
+
+        if _shutdown:
+            raise KeyboardInterrupt
+
+    finally:
+        try:
+            client.close()
+        except Exception:
+            pass
+        log.info("Session closed.")
 
 
+# ---------------------------------------------------------------------------
+# Retry wrapper around the whole session
+# ---------------------------------------------------------------------------
 @retry(
-    retry=retry_if_exception_type(TRANSIENT_ERRORS),
-    wait=wait_exponential(multiplier=1, min=RETRY_WAIT_MIN, max=RETRY_WAIT_MAX),
-    stop=_stop_policy(),
+    retry=retry_if_exception_type(TRANSIENT_ERRORS + (Disconnected,)),
+    wait=wait_exponential(multiplier=1, min=2, max=30),
     before_sleep=before_sleep_log(log, logging.WARNING),
     reraise=True,
 )
-def connect_with_retry() -> paramiko.SSHClient:
-    """Try to connect, retrying transient failures with exponential backoff."""
-    if _shutdown:
-        # let the outer loop exit cleanly
-        raise KeyboardInterrupt
-    return connect()
+def run_session_with_retry() -> None:
+    run_session()
 
 
 def main() -> int:
@@ -116,25 +138,18 @@ def main() -> int:
         return 1
 
     try:
-        client = connect_with_retry()
+        run_session_with_retry()
     except AuthenticationException as e:
-        # Fatal — don't retry, tell the human.
-        log.error("Authentication failed (fix the key, not the network): %s", e)
+        log.error("Authentication failed (fatal): %s", e)
         return 2
     except RetryError as e:
-        log.error("Gave up after retries: %s", e)
+        log.error("Gave up: %s", e)
         return 3
     except KeyboardInterrupt:
-        log.info("Interrupted while retrying.")
+        log.info("Interrupted. Goodbye.")
         return 0
 
-    try:
-        stdin, stdout, stderr = client.exec_command("hostname && whoami")
-        log.info("Remote says:\n%s", stdout.read().decode().strip())
-    finally:
-        client.close()
-        log.info("Connection closed.")
-
+    log.info("Done.")
     return 0
 
 
