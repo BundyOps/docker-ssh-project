@@ -5,6 +5,7 @@ services:
       dockerfile: dev1/Dockerfile
     container_name: developer
     hostname: developer
+    command: ["/home/dev/entrypoint.sh"]
     networks:
       - worldwideNET
 
