@@ -31,3 +31,10 @@ on internalServer: 	apt install nginx
 			service nginx start
 on developer2:		ssh -N jump &
 
+
+
+# Inside container : install tenacity and paramiko
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+

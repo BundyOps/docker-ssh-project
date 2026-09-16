@@ -1,144 +1,142 @@
 #!/usr/bin/env python3
 """
-Keep an SSH session to the jump host alive, authenticating via
-the running ssh-agent (SSH_AUTH_SOCK), with agent forwarding enabled.
-
-Reconnects forever with exponential backoff.
+Step 2: Same passwordless SSH connection as step 1,
+but wrapped in a tenacity retry loop that keeps trying forever.
 """
 
-import os
-import socket
-import time
+import logging
+import signal
 import sys
+from pathlib import Path
+
 import paramiko
-from paramiko.agent import AgentRequestHandler
+from paramiko.ssh_exception import (
+    AuthenticationException,
+    NoValidConnectionsError,
+    SSHException,
+)
+from socket import error as SocketError
+from tenacity import (
+    RetryError,
+    before_sleep_log,
+    retry,
+    retry_if_exception_type,
+    stop_after_delay,
+    wait_exponential,
+)
 
-HOST = "jump"
-PORT = 22
-USER = "dev"
+# ---------- configuration ----------
+SSH_HOST = "jump"
+SSH_PORT = 22
+SSH_USER = "dev2"
+SSH_KEY  = Path.home() / ".ssh" / "id_dev2"
 
-def log(msg):
-    print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
+# Retry policy
+RETRY_MAX_SECONDS = 0        # 0 = retry forever
+RETRY_WAIT_MIN    = 2        # first backoff
+RETRY_WAIT_MAX    = 30       # cap
+# -----------------------------------
 
-def enable_agent_forwarding(client):
-    """
-    Enable agent forwarding on an existing SSHClient connection.
-    This works by opening a session channel and attaching an
-    AgentRequestHandler to it. The handler sets up the forwarding
-    locally and on the remote side.
-    """
-    transport = client.get_transport()
-    # Open a regular session channel
-    session = transport.open_session()
-    # Attach the agent request handler to the session
-    # This creates the forwarded agent socket on the remote host
-    AgentRequestHandler(session)
-    # Store the session so it isn't garbage collected
-    client._agent_forwarding_session = session
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
+log = logging.getLogger("connect")
 
-def connect_once():
-    """Open one SSH session using the agent, with forwarding enabled."""
-    if not os.environ.get("SSH_AUTH_SOCK"):
-        raise RuntimeError("SSH_AUTH_SOCK is not set — start ssh-agent and ssh-add first")
+# ---- exceptions we consider "transient" (worth retrying) ----
+# Note: AuthenticationException is deliberately EXCLUDED — a bad key
+# will never fix itself by retrying. We want that to fail loudly.
+TRANSIENT_ERRORS = (
+    NoValidConnectionsError,   # host down / wrong port
+    SocketError,               # low-level socket failure
+    SSHException,              # generic SSH-level failure (banner, kex, ...)
+    TimeoutError,              # connect() timeout
+    ConnectionError,           # broken pipe / reset / refused
+    OSError,                   # catch-all for network-level issues
+)
 
+_shutdown = False
+
+
+def _handle_signal(signum, _frame):
+    global _shutdown
+    log.info("Received signal %s, shutting down...", signum)
+    _shutdown = True
+
+
+def _stop_policy():
+    """Return a tenacity stop strategy honoring --never or a max duration."""
+    if RETRY_MAX_SECONDS <= 0:
+        from tenacity import stop_never
+        return stop_never
+    return stop_after_delay(RETRY_MAX_SECONDS)
+
+
+def connect() -> paramiko.SSHClient:
+    """One connection attempt. Raises on failure."""
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-    # Authenticate via the agent. allow_agent=True makes paramiko
-    # talk to SSH_AUTH_SOCK, exactly like the ssh(1) client does.
-    # We disable any file-based fallbacks so it's agent-only.
+    log.info("Connecting to %s@%s:%d ...", SSH_USER, SSH_HOST, SSH_PORT)
     client.connect(
-        hostname=HOST,
-        port=PORT,
-        username=USER,
-        allow_agent=True,
+        hostname=SSH_HOST,
+        port=SSH_PORT,
+        username=SSH_USER,
+        key_filename=str(SSH_KEY),
+        allow_agent=False,
         look_for_keys=False,
-        password=None,
         timeout=10,
     )
-
-    # Now enable agent forwarding on the live connection.
-    enable_agent_forwarding(client)
-
+    log.info("Connected.")
     return client
 
-def run_session(client):
-    """Do something useful while connected. Replace with your real work."""
-    transport = client.get_transport()
-    log(f"connected to {USER}@{HOST} (transport active={transport.is_active()})")
-    # Show that the agent is available on the remote side
-    stdin, stdout, stderr = client.exec_command(
-        "echo SSH_AUTH_SOCK=$SSH_AUTH_SOCK; ssh-add -l"
-    )
-    out = stdout.read().decode().strip()
-    err = stderr.read().decode().strip()
-    log("remote output:")
-    print(out)
-    if err:
-        print(err)
 
-    # Stay connected: poll the transport and reconnect when it dies
-    while transport.is_active():
-        transport = client.get_transport()
-        log(f"in while: connected to {USER}@{HOST} (transport active={transport.is_active()})")
+@retry(
+    retry=retry_if_exception_type(TRANSIENT_ERRORS),
+    wait=wait_exponential(multiplier=1, min=RETRY_WAIT_MIN, max=RETRY_WAIT_MAX),
+    stop=_stop_policy(),
+    before_sleep=before_sleep_log(log, logging.WARNING),
+    reraise=True,
+)
+def connect_with_retry() -> paramiko.SSHClient:
+    """Try to connect, retrying transient failures with exponential backoff."""
+    if _shutdown:
+        # let the outer loop exit cleanly
+        raise KeyboardInterrupt
+    return connect()
 
-        # Show that the agent is available on the remote side
-        stdin, stdout, stderr = client.exec_command(
-            "echo SSH_AUTH_SOCK=$SSH_AUTH_SOCK; ssh-add -l"
-        )
-        out = stdout.read().decode().strip()
-        err = stderr.read().decode().strip()
-        log("remote output:")
-        print(out)
-        if err:
-            print(err)
-        
-        cmd = (
-            "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
-            "dev@internal 'hostname; whoami'"
-        )
 
-        _, out, err = client.exec_command(cmd)
-        stdout = out.read().decode()
-        stderr = err.read().decode()
-        rc = out.channel.recv_exit_status()
+def main() -> int:
+    signal.signal(signal.SIGINT, _handle_signal)
+    signal.signal(signal.SIGTERM, _handle_signal)
 
-        log(f"inner ssh rc={rc}")
-        log("--- stdout ---")
-        print(stdout, flush=True)
-        if stderr.strip():
-            log("--- stderr ---")
-            print(stderr, flush=True)
-        
-        time.sleep(2)
+    if not SSH_KEY.exists():
+        log.error("Private key not found: %s", SSH_KEY)
+        return 1
 
-    log("transport closed — will reconnect")
+    try:
+        client = connect_with_retry()
+    except AuthenticationException as e:
+        # Fatal — don't retry, tell the human.
+        log.error("Authentication failed (fix the key, not the network): %s", e)
+        return 2
+    except RetryError as e:
+        log.error("Gave up after retries: %s", e)
+        return 3
+    except KeyboardInterrupt:
+        log.info("Interrupted while retrying.")
+        return 0
 
-def main():
-    backoff = 1
-    client = None
-    while True:
-        try:
-            client = connect_once()
-            backoff = 1
-            run_session(client)
-        except (paramiko.SSHException, socket.error, RuntimeError) as e:
-            log(f"connection failed: {e} — retrying in {backoff}s")
-            time.sleep(backoff)
-            backoff = min(backoff * 2, 30)
-        except KeyboardInterrupt:
-            log("interrupted, exiting")
-            sys.exit(0)
-        finally:
-            if client is not None:
-                try:
-                    # Clean up the session used for forwarding
-                    if hasattr(client, '_agent_forwarding_session'):
-                        client._agent_forwarding_session.close()
-                    client.close()
-                except Exception:
-                    pass
-                client = None
+    try:
+        stdin, stdout, stderr = client.exec_command("hostname && whoami")
+        log.info("Remote says:\n%s", stdout.read().decode().strip())
+    finally:
+        client.close()
+        log.info("Connection closed.")
+
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
