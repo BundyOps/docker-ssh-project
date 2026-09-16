@@ -65,9 +65,7 @@ def connect_once():
 def run_session(client):
     """Do something useful while connected. Replace with your real work."""
     transport = client.get_transport()
-
     log(f"connected to {USER}@{HOST} (transport active={transport.is_active()})")
-
     # Show that the agent is available on the remote side
     stdin, stdout, stderr = client.exec_command(
         "echo SSH_AUTH_SOCK=$SSH_AUTH_SOCK; ssh-add -l"
@@ -81,6 +79,37 @@ def run_session(client):
 
     # Stay connected: poll the transport and reconnect when it dies
     while transport.is_active():
+        transport = client.get_transport()
+        log(f"in while: connected to {USER}@{HOST} (transport active={transport.is_active()})")
+
+        # Show that the agent is available on the remote side
+        stdin, stdout, stderr = client.exec_command(
+            "echo SSH_AUTH_SOCK=$SSH_AUTH_SOCK; ssh-add -l"
+        )
+        out = stdout.read().decode().strip()
+        err = stderr.read().decode().strip()
+        log("remote output:")
+        print(out)
+        if err:
+            print(err)
+        
+        cmd = (
+            "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
+            "dev@internal 'hostname; whoami'"
+        )
+
+        _, out, err = client.exec_command(cmd)
+        stdout = out.read().decode()
+        stderr = err.read().decode()
+        rc = out.channel.recv_exit_status()
+
+        log(f"inner ssh rc={rc}")
+        log("--- stdout ---")
+        print(stdout, flush=True)
+        if stderr.strip():
+            log("--- stderr ---")
+            print(stderr, flush=True)
+        
         time.sleep(2)
 
     log("transport closed — will reconnect")
