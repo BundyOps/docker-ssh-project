@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
-Step 2.5: Passwordless SSH that stays connected.
-- Retries on initial connect failure.
-- Detects mid-session disconnection and reconnects.
-- Runs until Ctrl-C / SIGTERM.
+Step 3: Persistent SSH local port-forward with passwordless auth.
+
+Equivalent to:
+    ssh -N -L 8080:stage-api:3000 dev2@jump
+but auto-reconnects forever.
 """
 
 import logging
@@ -12,13 +13,13 @@ import sys
 import time
 from pathlib import Path
 
-import paramiko
 from paramiko.ssh_exception import (
     AuthenticationException,
     NoValidConnectionsError,
     SSHException,
 )
 from socket import error as SocketError
+from sshtunnel import SSHTunnelForwarder
 from tenacity import (
     RetryError,
     before_sleep_log,
@@ -33,8 +34,8 @@ SSH_PORT = 22
 SSH_USER = "dev2"
 SSH_KEY  = Path.home() / ".ssh" / "id_dev2"
 
-KEEPALIVE_INTERVAL = 15   # seconds between keep-alive probes
-HEALTHCHECK_PERIOD = 5    # seconds between is_active() checks
+LOCAL_BIND    = ("127.0.0.1", 8080)      # what we expose locally
+REMOTE_TARGET = ("internal", 80)      # host:port as seen FROM the jump server
 # -----------------------------------
 
 logging.basicConfig(
@@ -42,7 +43,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%H:%M:%S",
 )
-log = logging.getLogger("stayalive")
+log = logging.getLogger("tunnel")
 
 TRANSIENT_ERRORS = (
     NoValidConnectionsError,
@@ -62,62 +63,52 @@ def _handle_signal(signum, _frame):
     _shutdown = True
 
 
-# ---------------------------------------------------------------------------
-# The long-running operation that tenacity will retry
-# ---------------------------------------------------------------------------
 class Disconnected(Exception):
-    """Raised from the keep-alive loop when the SSH session dies."""
+    """Raised when the tunnel drops mid-session. Retryable."""
 
 
-def run_session() -> None:
-    """
-    Connect, then block until the session dies or we're told to stop.
-    Raises Disconnected (retryable) when the transport drops.
-    """
+# ---------------------------------------------------------------------------
+# The long-running operation tenacity retries
+# ---------------------------------------------------------------------------
+def run_tunnel() -> None:
     if _shutdown:
         raise KeyboardInterrupt
 
-    client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-
-    log.info("Connecting to %s@%s:%d ...", SSH_USER, SSH_HOST, SSH_PORT)
-    client.connect(
-        hostname=SSH_HOST,
-        port=SSH_PORT,
-        username=SSH_USER,
-        key_filename=str(SSH_KEY),
+    server = SSHTunnelForwarder(
+        (SSH_HOST, SSH_PORT),
+        ssh_username=SSH_USER,
+        ssh_pkey=str(SSH_KEY),
         allow_agent=False,
-        look_for_keys=False,
-        timeout=10,
-        banner_timeout=10,
-        auth_timeout=10,
+        local_bind_address=LOCAL_BIND,
+        remote_bind_address=REMOTE_TARGET,
+        set_keepalive=15,
     )
-    log.info("Connected.")
 
-    transport = client.get_transport()
-    transport.set_keepalive(KEEPALIVE_INTERVAL)
+    log.info(
+        "Opening tunnel %s:%d -> %s:%d via %s@%s ...",
+        LOCAL_BIND[0], LOCAL_BIND[1],
+        REMOTE_TARGET[0], REMOTE_TARGET[1],
+        SSH_USER, SSH_HOST,
+    )
+    server.start()
+    log.info("Tunnel UP. Local port %d is forwarded.", LOCAL_BIND[1])
 
     try:
-        # ---- stay-alive loop ----
         while not _shutdown:
-            if not transport.is_active():
-                log.warning("Transport is no longer active.")
-                raise Disconnected("SSH transport died")
-            time.sleep(HEALTHCHECK_PERIOD)
-
-        if _shutdown:
-            raise KeyboardInterrupt
-
+            if not server.is_active:
+                raise Disconnected("tunnel dropped")
+            time.sleep(1)
+        raise KeyboardInterrupt
     finally:
         try:
-            client.close()
+            server.stop()
         except Exception:
             pass
-        log.info("Session closed.")
+        log.info("Tunnel closed.")
 
 
 # ---------------------------------------------------------------------------
-# Retry wrapper around the whole session
+# Retry wrapper
 # ---------------------------------------------------------------------------
 @retry(
     retry=retry_if_exception_type(TRANSIENT_ERRORS + (Disconnected,)),
@@ -125,8 +116,8 @@ def run_session() -> None:
     before_sleep=before_sleep_log(log, logging.WARNING),
     reraise=True,
 )
-def run_session_with_retry() -> None:
-    run_session()
+def run_tunnel_with_retry() -> None:
+    run_tunnel()
 
 
 def main() -> int:
@@ -138,7 +129,7 @@ def main() -> int:
         return 1
 
     try:
-        run_session_with_retry()
+        run_tunnel_with_retry()
     except AuthenticationException as e:
         log.error("Authentication failed (fatal): %s", e)
         return 2
@@ -149,7 +140,6 @@ def main() -> int:
         log.info("Interrupted. Goodbye.")
         return 0
 
-    log.info("Done.")
     return 0
 
 
