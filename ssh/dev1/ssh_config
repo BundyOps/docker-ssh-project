@@ -1,5 +1,5 @@
 Host jump
     HostName jump
-    User dev
+    User dev1
     ForwardAgent yes
 

@@ -1,0 +1,100 @@
+services:
+  # ─────────────── Developer1 workstation ───────────────
+  developer1:
+    build:
+      context: .
+      dockerfile: dev1/Dockerfile
+    container_name: developer1
+    hostname: developer1
+    command: ["sleep", "infinity"]
+    #["/home/dev/entrypoint.sh"]
+    networks:
+      - worldwideNET
+  # ─────────────── Developer2 workstation ───────────────
+  developer2:
+    build:
+      context: .
+      dockerfile: dev2/Dockerfile
+    container_name: developer2
+    hostname: developer2
+    command: ["sleep", "infinity"]
+    #["/home/dev2/entrypoint.sh"]
+    networks:
+      - worldwideNET
+  # ─────────────── Jump VM ───────────────
+  jump:
+    build:
+      context: .
+      dockerfile: jump/Dockerfile
+    container_name: jump
+    hostname: jump
+    networks:
+      - worldwideNET
+      - bastion
+  # ─────────────── App VM (SSH entry point) ───────────────
+  app-vm:
+    build:
+      context: .
+      dockerfile: app-vm/Dockerfile
+    container_name: app-vm
+    hostname: app-vm
+    networks:
+      - bastion
+      - webnet
+  # ─────────────── Web stack ───────────────
+  db:
+    image: docker.arvancloud.ir/postgres:15.19
+    container_name: db
+    env_file: [../deploy/.env]
+    volumes:
+      - db-vol:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myuser -d myapp_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks: [webnet]
+
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: myapp:latest
+    container_name: app
+    env_file: [../deploy/.env]
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [webnet]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  nginx:
+    image: docker.arvancloud.ir/nginx:stable-alpine3.24-perl
+    container_name: nginx
+    volumes:
+      - ../deploy/my-nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on: [app]
+    networks: [webnet]
+
+volumes:
+  db-vol:
+
+networks:
+  worldwideNET:
+  bastion:
+  webnet:
+  
+  
+  
+
+
+
+
+
+
+

@@ -15,7 +15,7 @@ from paramiko.agent import AgentRequestHandler
 
 HOST = "jump"
 PORT = 22
-USER = "dev"
+USER = "dev1"
 
 def log(msg):
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)

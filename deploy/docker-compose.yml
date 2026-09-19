@@ -1,0 +1,60 @@
+services:
+  db:
+    image: docker.arvancloud.ir/postgres:15.19
+    container_name: db-container
+    env_file:
+      - .env
+    #if you want to use pgAdmin you should see port 5432 in your host
+    #ports:
+      #- "5432:5432"
+    volumes:
+      - db-vol:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myuser -d myapp_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks: [webnet]
+    #restart: unless-stopped
+
+  app:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: myapp:latest
+    container_name: app-container
+    #do not expose this unless for debug
+    #ports:
+      #- "8000:8000"
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [webnet]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    #restart: unless-stopped
+
+  nginx:
+    image: docker.arvancloud.ir/nginx:stable-alpine3.24-perl
+    container_name: nginx-container
+    ports:
+      - "80:80"
+    volumes:
+      - ./my-nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - app
+    networks: [webnet]
+    #restart: unless-stopped
+
+
+volumes:
+  db-vol:
+  
+networks:
+  webnet:

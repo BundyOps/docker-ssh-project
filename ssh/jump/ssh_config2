@@ -1,0 +1,7 @@
+Host app-vm-2
+    HostName app-vm
+    User jump
+    IdentityFile /home/dev2/.ssh/jump
+    IdentitiesOnly yes
+    ForwardAgent no
+    IdentityAgent none

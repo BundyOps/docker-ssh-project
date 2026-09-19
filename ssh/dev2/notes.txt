@@ -1,3 +1,13 @@
+ssh jump
+then in jump do: ssh -L 127.0.0.1:8080:db:5432 dev@app-vm
+then come back to dev2's container and do: ssh -L 127.0.0.1:8080:127.0.0.1:8080 dev@jump
+then you can do this to see db in dev2's container: psql -h 127.0.0.1 -p 8080 -U myuser myapp_db
+
+
+
+
+
+=============================================================================================previous configs:
 Host tunnel-bastion
     HostName bastion
     User root
