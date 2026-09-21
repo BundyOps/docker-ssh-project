@@ -1,7 +1,7 @@
-FROM myubuntu:1.0
+FROM docker.arvancloud.ir/ubuntu:26.10
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends openssh-server nginx && \
+    apt-get install -y --no-install-recommends openssh-server nginx netcat-openbsd && \
     rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -s /bin/bash dev && \
@@ -18,7 +18,6 @@ AllowAgentForwarding yes\n\
 PubkeyAuthentication yes\n\
 PermitRootLogin no\n' >> /etc/ssh/sshd_config
 
-RUN apt-get update && apt-get install -y --no-install-recommends netcat-openbsd && rm -rf /var/lib/apt/lists/*
 
 EXPOSE 22 80
 

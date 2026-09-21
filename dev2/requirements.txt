@@ -1,0 +1,3 @@
+paramiko<4
+sshtunnel
+tenacity

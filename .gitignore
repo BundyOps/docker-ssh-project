@@ -32,3 +32,6 @@ Thumbs.db
 
 # Docker volumes
 volumes/
+
+Secretes
+keys/
