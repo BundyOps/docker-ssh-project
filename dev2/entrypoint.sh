@@ -1,16 +1,10 @@
 #!/bin/bash
 set -e
 
-eval "$(ssh-agent -s)"
-ssh-add /home/dev/.ssh/id_ed25519
+cd /home/dev2
 
-cat > /home/dev/agent.env <<EOF
-export SSH_AUTH_SOCK=$SSH_AUTH_SOCK
-export SSH_AGENT_PID=$SSH_AGENT_PID
-EOF
-chmod 600 /home/dev/agent.env
+# Activate the venv
+source /home/dev2/.venv/bin/activate
 
-echo "ssh-agent ready, key loaded:"
-ssh-add -l
-
-exec python3 /home/dev/keepalive.py
+# Run the keepalive script in the foreground
+exec python3 /home/dev2/keepalive.py

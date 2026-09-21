@@ -5,8 +5,8 @@ services:
       dockerfile: dev1/Dockerfile
     container_name: developer
     hostname: developer
-    command: ["sleep", "infinity"]
-    #["/home/dev/entrypoint.sh"]
+    command: ["/home/dev/entrypoint.sh"]
+    #command: ["sleep", "infinity"]
     networks:
       - worldwideNET
       
@@ -16,8 +16,13 @@ services:
       dockerfile: dev2/Dockerfile
     container_name: developer2
     hostname: developer2
-    command: ["sleep", "infinity"]
-    #["/home/dev2/entrypoint.sh"]
+    command: ["/home/dev2/entrypoint.sh"]
+    #[command: "sleep", "infinity"]
+    depends_on:
+      jump:
+        condition: service_healthy
+      internal:
+        condition: service_healthy
     networks:
       - worldwideNET
 
@@ -27,6 +32,12 @@ services:
       dockerfile: jump/Dockerfile
     container_name: jump
     hostname: jump
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 22 || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
     networks:
       - worldwideNET
       - companyLAN
@@ -37,6 +48,12 @@ services:
       dockerfile: stage/Dockerfile
     container_name: internal
     hostname: internal
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 22 || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
     networks:
       - companyLAN
 

@@ -1,7 +1,7 @@
 FROM myubuntu:1.0
 
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends openssh-server && \
+    apt-get install -y --no-install-recommends openssh-server nginx && \
     rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -s /bin/bash dev && \
@@ -18,5 +18,9 @@ AllowAgentForwarding yes\n\
 PubkeyAuthentication yes\n\
 PermitRootLogin no\n' >> /etc/ssh/sshd_config
 
-EXPOSE 22
-CMD ["/usr/sbin/sshd", "-D", "-e"]
+RUN apt-get update && apt-get install -y --no-install-recommends netcat-openbsd && rm -rf /var/lib/apt/lists/*
+
+EXPOSE 22 80
+
+# Start both nginx and sshd
+CMD service nginx start && /usr/sbin/sshd -D -e

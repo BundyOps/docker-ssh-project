@@ -1,4 +1,4 @@
-FROM myubuntu:1.0
+FROM docker.arvancloud.ir/ubuntu:26.10
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends openssh-client python3-paramiko && \
@@ -21,5 +21,3 @@ RUN chmod 700 /home/dev/.ssh && \
 
 USER dev
 WORKDIR /home/dev
-# No ENTRYPOINT, no CMD — compose decides what to run.
-# CMD ["sleep", "infinity"]

@@ -27,5 +27,7 @@ PubkeyAuthentication yes\n\
 AllowTcpForwarding yes\n\
 PermitRootLogin no\n' >> /etc/ssh/sshd_config
 
+RUN apt-get update && apt-get install -y --no-install-recommends netcat-openbsd && rm -rf /var/lib/apt/lists/*
+
 EXPOSE 22
 CMD ["/usr/sbin/sshd", "-D", "-e"]
